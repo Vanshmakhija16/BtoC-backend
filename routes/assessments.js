@@ -621,7 +621,7 @@ const assessments = [
     id: 5, // make sure the ID is unique
     title: "Sleep Quality Scale (SQS)",
     slug: "sqs",
-    description: "A 28-item scale measuring six domains of sleep quality: daytime symptoms, restoration after sleep, problems initiating and maintaining sleep, difficulty waking, and sleep satisfaction.",
+    description: "A 28-item scale assessing six key domains of overall sleep quality and satisfaction.",
     category: "sleep",
     questions: [
       {
@@ -1207,6 +1207,16 @@ router.put("/unlock-by-assessment/:assessmentId", authMiddleware, async (req, re
 });
 
 
+// Get all Assesments
+
+router.get("/getall", (req, res) => {
+  try {
+    res.status(200).json(assessments);
+  } catch (error) {
+    console.error("Error fetching assessments:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
 
 
 

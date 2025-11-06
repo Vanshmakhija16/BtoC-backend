@@ -7,7 +7,7 @@ import User from "../models/User.js";
 import upload from "../middlewares/upload.js"; 
 import jwt from "jsonwebtoken";
 import Session from "../models/Session.js";
-
+import Booking from "../models/Booking.js";
 
 const router = express.Router();
 
@@ -28,32 +28,81 @@ const authMiddleware = (req, res, next) => {
 };
 // --------------------- HELPERS ---------------------
 
+// // Format doctor for frontend response
+// const formatDoctorResponse = (doctor) => {
+//   // Call the method BEFORE converting to plain object
+//   const today = new Date().toISOString().slice(0, 10);
+//   const todaySlots = doctor.getAvailabilityForDate ? doctor.getAvailabilityForDate(today) : [];
+  
+//   // Add debugging
+//   console.log(`Doctor ${doctor.name}:`);
+//   console.log(`- Today (${today}) slots:`, todaySlots);
+//   console.log(`- Has dateSlots:`, doctor.dateSlots ? 'Yes' : 'No');
+//   if (doctor.dateSlots) {
+//     console.log(`- DateSlots keys:`, Array.from(doctor.dateSlots.keys()));
+//   }
+  
+//   // NOW convert to plain object
+//   const obj = doctor.toObject();
+  
+//   obj.todaySchedule = {
+//     date: today,
+//     available: true, // Change this line - always show as available
+//     slots: todaySlots,
+//   };
+  
+//   // Rest of existing code...
+//   obj.weeklySchedule = obj.weeklySchedule || [];
+  
+//   if (obj.dateSlots && obj.dateSlots instanceof Map) {
+//     const dateSlotObj = {};
+//     for (const [key, value] of obj.dateSlots.entries()) {
+//       dateSlotObj[key] = value;
+//     }
+//     obj.slots = dateSlotObj;
+//     obj.dateSlots = dateSlotObj;
+//   }   else if (obj.dateSlots && typeof obj.dateSlots === 'object') {
+//     obj.slots = obj.dateSlots;
+//   }
+
+//   // ✅ Add profileImage fiaeld before returning
+//   obj.profileImage = doctor.imageUrl 
+//     ? `${process.env.BASE_URL}${doctor.imageUrl}` 
+//     : null;
+  
+//   return obj;
+// };
+
 // Format doctor for frontend response
 const formatDoctorResponse = (doctor) => {
-  // Call the method BEFORE converting to plain object
   const today = new Date().toISOString().slice(0, 10);
-  const todaySlots = doctor.getAvailabilityForDate ? doctor.getAvailabilityForDate(today) : [];
-  
-  // Add debugging
+  const todaySlots = doctor.getAvailabilityForDate
+    ? doctor.getAvailabilityForDate(today)
+    : [];
+
+  // Debugging logs
   console.log(`Doctor ${doctor.name}:`);
   console.log(`- Today (${today}) slots:`, todaySlots);
-  console.log(`- Has dateSlots:`, doctor.dateSlots ? 'Yes' : 'No');
+  console.log(`- Has dateSlots:`, doctor.dateSlots ? "Yes" : "No");
   if (doctor.dateSlots) {
     console.log(`- DateSlots keys:`, Array.from(doctor.dateSlots.keys()));
   }
-  
-  // NOW convert to plain object
+
+  // Convert to plain object
   const obj = doctor.toObject();
-  
+
+  // ✅ Ensure charges are preserved
+  obj.charges = doctor.charges;
+
+  // Add today's schedule
   obj.todaySchedule = {
     date: today,
-    available: true, // Change this line - always show as available
+    available: true, // always show available for now
     slots: todaySlots,
   };
-  
-  // Rest of existing code...
+
+  // Normalize slots/dateSlots
   obj.weeklySchedule = obj.weeklySchedule || [];
-  
   if (obj.dateSlots && obj.dateSlots instanceof Map) {
     const dateSlotObj = {};
     for (const [key, value] of obj.dateSlots.entries()) {
@@ -61,15 +110,15 @@ const formatDoctorResponse = (doctor) => {
     }
     obj.slots = dateSlotObj;
     obj.dateSlots = dateSlotObj;
-  }   else if (obj.dateSlots && typeof obj.dateSlots === 'object') {
+  } else if (obj.dateSlots && typeof obj.dateSlots === "object") {
     obj.slots = obj.dateSlots;
   }
 
-  // ✅ Add profileImage fiaeld before returning
-  obj.profileImage = doctor.imageUrl 
-    ? `${process.env.BASE_URL}${doctor.imageUrl}` 
+  // ✅ Add profileImage field before returning
+  obj.profileImage = doctor.imageUrl
+    ? `${process.env.BASE_URL}${doctor.imageUrl}`
     : null;
-  
+
   return obj;
 };
 
@@ -212,7 +261,7 @@ router.get("/", async (req, res) => {
 
     const doctors = await Doctor.find(filter)
       .select('-password')
-      .populate('universities', 'name')
+      .populate('name')
       .sort({ createdAt: -1 });
     
     res.status(200).json({ 
@@ -224,6 +273,35 @@ router.get("/", async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+router.get("/all", async (req, res) => {
+  try {
+    const doctors = await Doctor.find()
+      .select("name imageUrl experience charges languages availabilityType about specialization expertise gender"); // Only return relevant fields
+     console.log(doctors)
+
+    if (!doctors || doctors.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No doctors found in the database",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      count: doctors.length,
+      data: doctors,
+    });
+  } catch (error) {
+    console.error("Error fetching doctors:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching doctors",
+      error: error.message,
+    });
+  }
+});
+
 
 // Get doctors for student's university
 router.get("/my-university",  authMiddleware, async (req, res) => {
@@ -257,7 +335,7 @@ router.get("/:id", validateObjectId, upload.single("profileImage"), async (req, 
   try {
     const doctor = await Doctor.findById(req.params.id)
       .select('-password')
-      .populate('universities', 'name');
+      .populate('name');
     
     if (!doctor) {
       return res.status(404).json({ success: false, message: "Doctor not found" });
@@ -730,77 +808,23 @@ router.get("/:id/available-dates", validateObjectId, async (req, res) => {
     const days = parseInt(req.query.days, 10) || 14;
     const doctor = await Doctor.findById(req.params.id).select("-password");
 
-    if (!doctor) {
+    if (!doctor)
       return res.status(404).json({ success: false, message: "Doctor not found" });
-    }
 
-    // ✅ Get booked sessions for this doctor
+    // ✅ Get all booked sessions (except cancelled)
     const bookedSessions = await Session.find({
       doctorId: doctor._id,
       status: { $ne: "cancelled" },
     }).lean();
 
-    // ✅ Logged-in user (Vansh's ID, for example)
-    const userId = req.userId;
-
-    // --- START: LOGIC FOR GLOBAL 2-SESSION LIMIT PER USER ---
-    let userTotalActiveSessions = 0;
-    let earliestActiveSessionDate = null;
-
-    if (userId) {
-      // **CRITICAL: This filter ensures only the CURRENT USER'S sessions are counted.**
-      const userActiveSessions = bookedSessions.filter(
-        (s) => String(s.userId) === String(userId)
-      );
-
-      userTotalActiveSessions = userActiveSessions.length;
-
-      // Find the earliest future session date for the current user
-      for (const s of userActiveSessions) {
-        const sessionDate = new Date(s.slotStart);
-        sessionDate.setHours(0, 0, 0, 0);
-
-        if (!earliestActiveSessionDate || sessionDate < earliestActiveSessionDate) {
-          earliestActiveSessionDate = sessionDate;
-        }
-      }
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // ✅ Implement the global block rule:
-    let blockedUntilDate = null;
-
-    if (
-      userId &&
-      userTotalActiveSessions >= 2 &&
-      earliestActiveSessionDate &&
-      today <= earliestActiveSessionDate
-    ) {
-      blockedUntilDate = earliestActiveSessionDate;
-
-      // Global block response: no available slots at all
-      return res.json({
-        success: true,
-        data: [], // no available slots at all
-        blockedUntil: blockedUntilDate.toISOString().split("T")[0],
-        message: `You already have ${userTotalActiveSessions} sessions booked. You can book again starting the day after your earliest session on ${blockedUntilDate.toISOString().split("T")[0]}.`,
-      });
-    }
-
-    // --- END: LOGIC FOR GLOBAL 2-SESSION LIMIT PER USER ---
-
-    // ✅ Build lookup for booked slots (for all users, to block the doctor's slots)
+    // ✅ Build a set of normalized booked slot start times
     const bookedMap = new Set(
-      bookedSessions.map((s) => {
-        const dt = new Date(s.slotStart);
-        dt.setSeconds(0, 0);
-        return dt.toISOString();
-      })
+      bookedSessions.map((s) =>
+        new Date(s.slotStart).toISOString().slice(0, 16) // keep up to minute precision
+      )
     );
 
-    // ✅ Get doctor’s slots
+    // ✅ Load doctor’s available slot data
     const grouped =
       doctor.getAvailableDates?.(days) ??
       doctor.getAllDateSlots?.() ??
@@ -808,20 +832,19 @@ router.get("/:id/available-dates", validateObjectId, async (req, res) => {
       doctor.slots ??
       {};
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const sortedDates = Object.keys(grouped).sort(
       (a, b) => new Date(a) - new Date(b)
     );
 
-    // ✅ Otherwise, show normal available slots
+    // ✅ Filter out booked & past slots
     const availableDates = sortedDates
       .filter((date) => {
         const d = new Date(date);
         d.setHours(0, 0, 0, 0);
-
-        // 🚫 Past dates
-        if (d < today) return false;
-
-        return true;
+        return d >= today;
       })
       .map((date) => {
         const slots = grouped[date] || [];
@@ -831,26 +854,23 @@ router.get("/:id/available-dates", validateObjectId, async (req, res) => {
             slot.startTime || slot.start || slot.slotStart || slot.time;
           if (!startTime) return false;
 
-          const slotDateTime = new Date(`${date}T${startTime}:00`);
-          if (isNaN(slotDateTime)) return false;
+          // normalize slot datetime
+          const slotISO = new Date(`${date}T${startTime}:00`)
+            .toISOString()
+            .slice(0, 16);
 
-          slotDateTime.setSeconds(0, 0);
-          const slotISO = slotDateTime.toISOString();
+          // ❌ If this slot time exists in bookedMap → remove it
+          if (bookedMap.has(slotISO)) return false;
 
-          // This blocks slots booked by ANY user
-          return !bookedMap.has(slotISO) && slot.isAvailable !== false;
+          // ✅ Keep only available ones
+          return slot.isAvailable !== false;
         });
 
         return { date, slots: freeSlots };
       })
       .filter((entry) => entry.slots.length > 0);
 
-    // ✅ Response
-    res.json({
-      success: true,
-      data: availableDates,
-      blockedUntil: null,
-    });
+    res.json({ success: true, data: availableDates });
   } catch (err) {
     console.error("Error fetching available dates:", err);
     res.status(500).json({ success: false, message: err.message });
@@ -902,11 +922,12 @@ router.get("/:id/available-dates/employee", async (req, res) => {
           const startTime =
             slot.startTime || slot.start || slot.slotStart || slot.time;
           if (!startTime) return false;
-
-          const slotDateTime = new Date(`${date}T${startTime}:00`);
+          
+          const slotDateTime = new Date(`${date}T${startTime}:00Z`); // <— force UTC
           if (isNaN(slotDateTime)) return false;
 
           return !bookedMap.has(slotDateTime.toISOString());
+
         });
 
         return { date, slots: freeSlots };
@@ -920,4 +941,76 @@ router.get("/:id/available-dates/employee", async (req, res) => {
   }
 });
 
+// routes/doctorRoutes.js
+// router.get("/:id/availabilitybtoc", async (req, res) => {
+//   try {
+//     const doctor = await Doctor.findById(req.params.id);
+//     if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+
+//     const availability = await doctor.getUpcomingAvailability(30);
+//     res.json(availability); // { "2025-10-29": ["07:00", "08:30"], "2025-10-30": ["10:00", "16:30"] }
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+
+
+router.get("/:id/availabilitybtoc", async (req, res) => {
+  try {
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor)
+      return res.status(404).json({ message: "Doctor not found" });
+
+    // 1️⃣ Get raw availability
+    let availability = {};
+    if (doctor.getUpcomingAvailability) {
+      availability = await doctor.getUpcomingAvailability(30);
+    } else if (doctor.dateSlots) {
+      // Convert Map to plain object if needed
+      availability =
+        doctor.dateSlots instanceof Map
+          ? Object.fromEntries(doctor.dateSlots)
+          : doctor.dateSlots;
+    }
+
+    // 2️⃣ Fetch all bookings for this doctor
+    const bookings = await Booking.find({ doctorId: doctor._id });
+
+    // 3️⃣ Remove booked slots
+    const availableSlots = {};
+
+    for (const [date, slots] of Object.entries(availability)) {
+      // Get all booked slots (strings like "10:00 - 10:50")
+      const bookedSlots = bookings
+        .filter((b) => {
+          const bookingDate = new Date(b.date).toISOString().split("T")[0];
+          return bookingDate === date;
+        })
+        .map((b) => b.slot);
+
+      // ✅ Normalize slot to string for comparison
+      availableSlots[date] = (slots || []).filter((s) => {
+        const slotStr =
+          typeof s === "string" ? s : `${s.startTime} - ${s.endTime}`;
+        return !bookedSlots.includes(slotStr);
+      });
+    }
+
+    // 4️⃣ Keep only dates with available slots
+    const filtered = Object.fromEntries(
+      Object.entries(availableSlots).filter(([_, slots]) => slots.length > 0)
+    );
+
+    // 5️⃣ Send final availability
+    res.json(filtered);
+  } catch (err) {
+    console.error("❌ Error fetching availability:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 export default router;
+

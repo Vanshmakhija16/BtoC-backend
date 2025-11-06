@@ -29,16 +29,27 @@ const todayScheduleSchema = new mongoose.Schema({
 const doctorSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    specialization: { type: String, required: true },
+    specialization: { type: String, required: false },
+    expertise: { type: String, required: false },
     email: { type: String, required: true, unique: true },
-    phone: { type: String },
+    phone: { type: String, default: "" },
     password: { type: String, required: false }, // For login
     role: { type: String, enum: ["doctor", "admin"], default: "doctor" },
-    experience: { type: Number },
+    experience: { type: Number ,default: 0 },
     imageUrl: { type: String, default: "" },
-    fees: { type: Number },
-    hospital: { type: String },
     availabilityType: { type: String, enum: ["online", "offline", "both"], default: "both" },
+    onlineModes: {
+      type: [String], // e.g. ["video", "audio"]
+      default: ["video", "audio"]
+    },
+    languages: { type: [String], default: ["English", "Hindi"] },  // Example: ["English", "Hindi", "Marathi"]
+    charges: {
+    amount: { type: Number, default: 0 },      // e.g. 1600
+    duration: { type: String, default: "70 mins" } // e.g. "50 mins"
+  },
+   gender: { type: String, enum: ["male", "female", "other"], default: "other" },
+   about: { type: String, default: "" },
+
     isAvailable: { type: String, enum: ["available", "not_available"], default: "available" },
     weeklySchedule: { type: [dayScheduleSchema], default: [] },
     todaySchedule: {

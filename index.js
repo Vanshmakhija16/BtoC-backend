@@ -15,6 +15,9 @@ import assessmentsRoute from "./routes/assessments.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import CompanyRoute from "./routes/CompanyRoute.js";
 import employeeAuthRoutes from "./routes/employeeAuthRoutes.js";
+import bookingRoute from "./routes/bookingRoute.js";
+import ArticleRoutes from "./routes/ArticleRoute.js";
+
 
 
 import path from "path";
@@ -83,6 +86,9 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/companies", CompanyRoute);
 app.use("/api/employee", employeeAuthRoutes);
 app.use("/api/employee-questionnaire", employeeQuestionnaireRoutes);
+app.use("/api/bookings", bookingRoute);
+app.use("/api/articles", ArticleRoutes);
+
 
 
 
